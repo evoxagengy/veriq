@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #061b35;
+  --color-primary-dark: #031225;
+  --color-accent: #00d6c9;
+  --color-accent-dark: #00afa6;
+  --color-background: #f6f8fb;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+  --color-text: #0f172a;
+  --color-text-secondary: #64748b;
+  --color-text-muted: #94a3b8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--color-background);
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  background:
+    radial-gradient(circle at 90% 10%, rgba(0, 214, 201, 0.08), transparent 28rem),
+    var(--color-background);
+  color: var(--color-text);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: rgba(0, 214, 201, 0.28);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.veriq-focus {
+  @apply outline-none ring-0 transition;
+}
+
+.veriq-focus:focus-visible {
+  box-shadow: 0 0 0 3px rgba(0, 214, 201, 0.2);
+}
+
+.veriq-card {
+  @apply rounded-lg border border-border bg-surface shadow-card;
+}
+
+.table-grid {
+  grid-template-columns: var(--table-columns);
+}
+
+.login-grid {
+  background-image:
+    linear-gradient(135deg, rgba(3, 18, 37, 0.98), rgba(6, 27, 53, 0.96)),
+    radial-gradient(circle at 18% 96%, rgba(0, 214, 201, 0.34), transparent 18rem);
+}
+
+.login-mesh {
+  background-image:
+    linear-gradient(rgba(0, 214, 201, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 214, 201, 0.22) 1px, transparent 1px);
+  background-size: 28px 28px;
+  transform: perspective(540px) rotateX(64deg) translateY(12rem);
+  transform-origin: bottom;
+  mask-image: linear-gradient(to top, black, transparent 70%);
+}
+

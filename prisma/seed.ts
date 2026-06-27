@@ -1,0 +1,216 @@
+import argon2 from "argon2";
+import { PrismaClient, type ChecklistStatus, type Criticality, type EquipmentStatus, type InspectionStatus, type Role } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+const PEPPER =
+  process.env.SECURITY_PEPPER ??
+  "dev-only-security_pepper-replace-before-production-32-characters";
+
+async function hashPassword(password: string) {
+  return argon2.hash(`${password}:${PEPPER}`, {
+    type: argon2.argon2id,
+    memoryCost: 65536,
+    timeCost: 3,
+    parallelism: 1
+  });
+}
+
+const users = [
+  { name: "Rafael Souza", email: "admin@veriq.local", role: "ADMIN" as Role },
+  { name: "Ana Paula", email: "ana@veriq.local", role: "SUPERVISOR" as Role },
+  { name: "João Silva", email: "joao@veriq.local", role: "OPERATOR" as Role },
+  { name: "Carlos Lima", email: "carlos@veriq.local", role: "TECHNICIAN" as Role },
+  { name: "Mariana Costa", email: "mariana@veriq.local", role: "INSPECTOR" as Role },
+  { name: "Fernanda Silva", email: "fernanda@veriq.local", role: "MANAGER" as Role }
+];
+
+const equipmentSeed = [
+  ["EMP-02", "Empilhadeira Hyster H2.5", "Empilhadeiras", "Logística", "H2.5FT", "CRITICAL", "CRITICAL"],
+  ["CB-101", "Caldeira CB-101", "Caldeiras", "Utilidades", "CB-101", "ATTENTION", "HIGH"],
+  ["CP-03", "Compressor CP-03", "Compressores", "Manutenção", "CP-300", "OPERATING", "MEDIUM"],
+  ["PR-05", "Ponte Rolante PR-05", "Pontes Rolantes", "Produção", "PR-10T", "OPERATING", "HIGH"],
+  ["PE-12", "Painel Elétrico PE-12", "Painéis Elétricos", "Elétrica", "PE-400A", "OPERATING", "HIGH"],
+  ["BC-07", "Bomba Centrífuga BC-07", "Bombas", "Utilidades", "KSB 40-200", "MAINTENANCE", "MEDIUM"],
+  ["TR-01", "Torre de Resfriamento TR-01", "Torres de Resfriamento", "Utilidades", "TR-150", "ATTENTION", "MEDIUM"],
+  ["SA-02", "Secador de Ar SA-02", "Secadores", "Manutenção", "SA-200", "MAINTENANCE", "LOW"],
+  ["GE-01", "Gerador de Energia GE-01", "Geradores", "Utilidades", "GE-250", "INACTIVE", "HIGH"],
+  ["TRF-03", "Transformador TRF-03", "Transformadores", "Elétrica", "500 KVA", "OPERATING", "CRITICAL"]
+] satisfies Array<[string, string, string, string, string, EquipmentStatus, Criticality]>;
+
+const checklistSeed = [
+  ["CHK-001", "Inspeção diária de empilhadeira", "Empilhadeiras", "EMP-02 / Logística", "Diária", "ACTIVE"],
+  ["CHK-002", "Checklist de caldeira", "Caldeiras", "CB-101 / Utilidades", "Diária", "ACTIVE"],
+  ["CHK-003", "Inspeção de compressor", "Compressores", "CP-03 / Manutenção", "Diária", "ACTIVE"],
+  ["CHK-004", "Segurança operacional", "Segurança", "Geral", "Semanal", "ACTIVE"],
+  ["CHK-005", "Ponte rolante", "Pontes Rolantes", "PR-05 / Produção", "Semanal", "ACTIVE"],
+  ["CHK-006", "Checklist elétrica NR-10", "Elétrica", "Painéis Elétricos", "Quinzenal", "ACTIVE"],
+  ["CHK-007", "Inspeção de extintores", "Segurança", "Geral", "Mensal", "REVIEW"],
+  ["CHK-008", "Controle de EPI", "Segurança", "Geral", "Mensal", "ACTIVE"],
+  ["CHK-009", "Lubrificação de máquinas", "Manutenção", "Geral", "Mensal", "ACTIVE"],
+  ["CHK-010", "Limpeza industrial", "Limpeza", "Geral", "Diária", "DRAFT"]
+] satisfies Array<[string, string, string, string, string, ChecklistStatus]>;
+
+async function main() {
+  const tenant = await prisma.tenant.upsert({
+    where: { slug: "engenix" },
+    update: { name: "Engenix Operações" },
+    create: { name: "Engenix Operações", slug: "engenix" }
+  });
+
+  const passwordHash = await hashPassword("Veriq@2026");
+  const savedUsers = await Promise.all(
+    users.map((user) =>
+      prisma.user.upsert({
+        where: { email: user.email },
+        update: {
+          tenantId: tenant.id,
+          name: user.name,
+          role: user.role,
+          active: true
+        },
+        create: {
+          tenantId: tenant.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          passwordHash
+        }
+      })
+    )
+  );
+
+  const admin = savedUsers[0];
+  const operator = savedUsers.find((user) => user.role === "OPERATOR") ?? admin;
+
+  const equipments = await Promise.all(
+    equipmentSeed.map(([tag, name, category, area, model, status, criticality], index) =>
+      prisma.equipment.upsert({
+        where: { tenantId_tag: { tenantId: tenant.id, tag } },
+        update: {
+          name,
+          category,
+          area,
+          model,
+          status,
+          criticality,
+          responsibleId: savedUsers[index % savedUsers.length]?.id ?? admin.id,
+          lastChecklistAt: new Date("2025-05-16T08:00:00-03:00"),
+          nextInspectionAt: new Date(Date.now() + (index + 1) * 24 * 60 * 60 * 1000)
+        },
+        create: {
+          tenantId: tenant.id,
+          tag,
+          name,
+          category,
+          area,
+          model,
+          manufacturer: "Engenix",
+          status,
+          criticality,
+          responsibleId: savedUsers[index % savedUsers.length]?.id ?? admin.id,
+          lastChecklistAt: new Date("2025-05-16T08:00:00-03:00"),
+          nextInspectionAt: new Date(Date.now() + (index + 1) * 24 * 60 * 60 * 1000)
+        }
+      })
+    )
+  );
+
+  const checklists = await Promise.all(
+    checklistSeed.map(([code, name, category, area, periodicity, status], index) =>
+      prisma.checklistTemplate.upsert({
+        where: { tenantId_code: { tenantId: tenant.id, code } },
+        update: {
+          name,
+          category,
+          area,
+          periodicity,
+          status,
+          responsibleId: savedUsers[index % savedUsers.length]?.id ?? admin.id,
+          estimatedMinutes: 15 + (index % 5) * 5
+        },
+        create: {
+          tenantId: tenant.id,
+          code,
+          name,
+          category,
+          area,
+          periodicity,
+          status,
+          responsibleId: savedUsers[index % savedUsers.length]?.id ?? admin.id,
+          estimatedMinutes: 15 + (index % 5) * 5,
+          items: {
+            create: [
+              {
+                position: 1,
+                description: "Verificar condição geral",
+                responseType: "Sim/Não",
+                criticality: "MEDIUM"
+              },
+              {
+                position: 2,
+                description: "Registrar evidência fotográfica",
+                responseType: "Foto",
+                criticality: "LOW",
+                required: false
+              },
+              {
+                position: 3,
+                description: "Informar observações relevantes",
+                responseType: "Texto",
+                criticality: "LOW",
+                required: false
+              }
+            ]
+          }
+        }
+      })
+    )
+  );
+
+  const existingInspections = await prisma.inspection.count({
+    where: { tenantId: tenant.id }
+  });
+
+  if (existingInspections < 12) {
+    await prisma.inspection.createMany({
+      data: checklists.slice(0, 8).map((checklist, index) => ({
+        tenantId: tenant.id,
+        templateId: checklist.id,
+        equipmentId: equipments[index % equipments.length]?.id,
+        assignedToId: operator.id,
+        status: (["OVERDUE", "PENDING", "PENDING", "IN_PROGRESS", "SCHEDULED", "COMPLETED"] as InspectionStatus[])[index % 6],
+        dueAt: new Date(Date.now() + (index - 2) * 60 * 60 * 1000),
+        startedAt: index % 3 === 0 ? new Date(Date.now() - 60 * 60 * 1000) : null,
+        completedAt: index % 6 === 5 ? new Date(Date.now() - 30 * 60 * 1000) : null,
+        score: index % 6 === 5 ? 98.6 : null
+      }))
+    });
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      tenantId: tenant.id,
+      userId: admin.id,
+      action: "DEMO_SEED",
+      resource: "System",
+      metadata: {
+        safe: true
+      }
+    }
+  });
+
+  console.log("Seed concluído.");
+  console.log("Login demo: admin@veriq.local");
+  console.log("Senha demo: Veriq@2026");
+}
+
+main()
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+

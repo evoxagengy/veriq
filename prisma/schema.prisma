@@ -1,0 +1,227 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  SUPERVISOR
+  OPERATOR
+  TECHNICIAN
+  INSPECTOR
+}
+
+enum EquipmentStatus {
+  OPERATING
+  MAINTENANCE
+  INACTIVE
+  CRITICAL
+  ATTENTION
+}
+
+enum ChecklistStatus {
+  ACTIVE
+  DRAFT
+  REVIEW
+  ARCHIVED
+}
+
+enum InspectionStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+  SCHEDULED
+}
+
+enum Criticality {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model Tenant {
+  id          String              @id @default(cuid())
+  name        String
+  slug        String              @unique
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  users       User[]
+  equipments  Equipment[]
+  checklists  ChecklistTemplate[]
+  inspections Inspection[]
+  auditLogs   AuditLog[]
+}
+
+model User {
+  id               String        @id @default(cuid())
+  tenantId         String
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name             String
+  email            String        @unique
+  role             Role          @default(OPERATOR)
+  passwordHash     String
+  avatarUrl        String?
+  active           Boolean       @default(true)
+  failedLoginCount Int           @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  sessions         Session[]
+  auditLogs        AuditLog[]
+  ownedEquipment   Equipment[]   @relation("EquipmentResponsible")
+  ownedChecklists  ChecklistTemplate[] @relation("ChecklistResponsible")
+  assignedInspections Inspection[] @relation("InspectionAssignee")
+
+  @@index([tenantId])
+  @@index([role])
+}
+
+model Session {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash     String    @unique
+  ipHash        String?
+  userAgentHash String?
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model LoginAttempt {
+  id          String    @id @default(cuid())
+  identifier  String
+  ipHash      String
+  attempts    Int       @default(0)
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([identifier, ipHash])
+  @@index([lockedUntil])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String?
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  resource   String
+  resourceId String?
+  metadata   Json?
+  ipHash     String?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model Equipment {
+  id                   String          @id @default(cuid())
+  tenantId             String
+  tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tag                  String
+  name                 String
+  category             String
+  area                 String
+  model                String?
+  manufacturer         String?
+  serialNumber         String?
+  location             String?
+  description          String?
+  status               EquipmentStatus @default(OPERATING)
+  criticality          Criticality     @default(MEDIUM)
+  active               Boolean         @default(true)
+  monitorOnDashboard   Boolean         @default(true)
+  allowChecklists      Boolean         @default(true)
+  requiresStopApproval Boolean         @default(false)
+  lastChecklistAt      DateTime?
+  nextInspectionAt     DateTime?
+  responsibleId        String?
+  responsible          User?           @relation("EquipmentResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
+  inspections          Inspection[]
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  @@unique([tenantId, tag])
+  @@index([tenantId, status])
+  @@index([tenantId, category])
+}
+
+model ChecklistTemplate {
+  id                String            @id @default(cuid())
+  tenantId          String
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code              String
+  name              String
+  category          String
+  area              String
+  periodicity       String
+  description       String?
+  status            ChecklistStatus   @default(ACTIVE)
+  estimatedMinutes  Int               @default(30)
+  requiresApproval  Boolean           @default(false)
+  allowsPhotos      Boolean           @default(true)
+  requiresSignature Boolean           @default(true)
+  mobileEnabled     Boolean           @default(true)
+  responsibleId     String?
+  responsible       User?             @relation("ChecklistResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
+  items             ChecklistItem[]
+  inspections       Inspection[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([tenantId, category])
+}
+
+model ChecklistItem {
+  id                  String            @id @default(cuid())
+  templateId          String
+  template            ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  position            Int
+  description         String
+  responseType        String
+  criticality         Criticality       @default(MEDIUM)
+  required            Boolean           @default(true)
+  nonConformityAction String             @default("OPEN_OCCURRENCE")
+
+  @@unique([templateId, position])
+}
+
+model Inspection {
+  id          String            @id @default(cuid())
+  tenantId    String
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  templateId  String
+  template    ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  equipmentId String?
+  equipment   Equipment?        @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  assignedToId String?
+  assignedTo  User?             @relation("InspectionAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  status      InspectionStatus  @default(PENDING)
+  dueAt       DateTime
+  startedAt   DateTime?
+  completedAt DateTime?
+  score       Decimal?          @db.Decimal(5, 2)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, dueAt])
+  @@index([assignedToId, status])
+}
+
