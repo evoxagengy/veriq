@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import {
   CalendarDays,
   CalendarRange,
@@ -14,15 +16,20 @@ import {
   Timer,
   TriangleAlert
 } from "lucide-react";
+import { scheduleInspectionAction, startInspectionAction } from "@/app/actions/inspections";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { KpiCard } from "@/components/ui/kpi-card";
+import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { InspectionsData } from "@/lib/data/queries";
 import { mapInspectionStatus } from "@/lib/data/queries";
+import { formatDateTime } from "@/lib/utils";
 
 export function InspectionsClient({ data }: { data: InspectionsData }) {
+  const [open, setOpen] = useState(false);
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -39,6 +46,9 @@ export function InspectionsClient({ data }: { data: InspectionsData }) {
           <Button variant="secondary">
             <CalendarRange className="h-4 w-4" aria-hidden="true" />
             Turno atual
+          </Button>
+          <Button onClick={() => setOpen(true)}>
+            Agendar inspeção
           </Button>
         </div>
       </div>
@@ -112,12 +122,15 @@ export function InspectionsClient({ data }: { data: InspectionsData }) {
                       </td>
                       <td className="px-4 py-4 text-primary">{item.category}</td>
                       <td className="px-4 py-4 text-primary">{item.periodicity}</td>
-                      <td className="px-4 py-4 text-primary">Hoje, 08:00</td>
+                      <td className="px-4 py-4 text-primary">{formatDateTime(item.dueAt)}</td>
                       <td className="px-4 py-4 text-primary">{item.estimatedMinutes} min</td>
                       <td className="px-4 py-4"><StatusBadge status={mapInspectionStatus(item.status)} /></td>
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-2">
-                          <Button size="sm">Realizar checklist</Button>
+                          <form action={startInspectionAction}>
+                            <input type="hidden" name="inspectionId" value={item.id} />
+                            <Button size="sm" type="submit">Realizar checklist</Button>
+                          </form>
                           <button className="veriq-focus grid h-9 w-9 place-items-center rounded-sm border border-border hover:bg-slate-50">
                             <Eye className="h-4 w-4" aria-hidden="true" />
                           </button>
@@ -139,7 +152,7 @@ export function InspectionsClient({ data }: { data: InspectionsData }) {
           <Card>
             <CardHeader>
               <h2 className="font-display text-base font-bold text-primary-dark">Minhas próximas inspeções</h2>
-              <a className="text-xs font-bold text-blue-600" href="/inspecoes">Ver agenda</a>
+              <Link className="text-xs font-bold text-blue-600" href="/inspecoes">Ver agenda</Link>
             </CardHeader>
             <CardContent className="space-y-4">
               {data.items.slice(0, 4).map((item) => (
@@ -181,7 +194,58 @@ export function InspectionsClient({ data }: { data: InspectionsData }) {
           </Card>
         </div>
       </section>
+
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Agendar inspeção"
+        description="Crie uma execução vinculada a um checklist e, opcionalmente, a um equipamento."
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="submit" form="schedule-inspection-form">Agendar</Button>
+          </>
+        }
+        size="md"
+      >
+        <form id="schedule-inspection-form" action={scheduleInspectionAction} className="grid gap-4">
+          <label className="block">
+            <span className="mb-2 block text-xs font-semibold text-primary">Checklist *</span>
+            <select name="templateId" required className="veriq-focus h-11 w-full rounded-md border border-border-strong bg-white px-3 text-sm text-primary focus:border-accent focus:shadow-glow">
+              {data.templates.map((template) => (
+                <option key={template.id} value={template.id}>{template.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-xs font-semibold text-primary">Equipamento</span>
+            <select name="equipmentId" className="veriq-focus h-11 w-full rounded-md border border-border-strong bg-white px-3 text-sm text-primary focus:border-accent focus:shadow-glow">
+              <option value="">Área geral</option>
+              {data.equipments.map((equipment) => (
+                <option key={equipment.id} value={equipment.id}>{equipment.name} ({equipment.tag})</option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-xs font-semibold text-primary">Responsável</span>
+            <select name="assignedToId" className="veriq-focus h-11 w-full rounded-md border border-border-strong bg-white px-3 text-sm text-primary focus:border-accent focus:shadow-glow">
+              <option value="">Livre para execução</option>
+              {data.users.map((user) => (
+                <option key={user.id} value={user.id}>{user.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-xs font-semibold text-primary">Prazo *</span>
+            <input
+              name="dueAt"
+              type="datetime-local"
+              required
+              className="veriq-focus h-11 w-full rounded-md border border-border-strong bg-white px-3 text-sm text-primary focus:border-accent focus:shadow-glow"
+            />
+          </label>
+        </form>
+      </Modal>
     </div>
   );
 }
-

@@ -8,8 +8,7 @@ export const metadata = {
 
 export default async function InspecoesPage() {
   const session = await requireSession();
-  const data = await getInspectionsData(session.user.tenantId, session.user.id);
+  const data = await getInspectionsData(session.user.tenantId, session.user.id, session.user.role);
 
   return <InspectionsClient data={data} />;
 }
-

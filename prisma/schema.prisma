@@ -46,17 +46,26 @@ enum Criticality {
   CRITICAL
 }
 
+enum NonConformityStatus {
+  OPEN
+  IN_TREATMENT
+  RESOLVED
+  CANCELLED
+}
+
 model Tenant {
-  id          String              @id @default(cuid())
-  name        String
-  slug        String              @unique
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-  users       User[]
-  equipments  Equipment[]
-  checklists  ChecklistTemplate[]
-  inspections Inspection[]
-  auditLogs   AuditLog[]
+  id              String              @id @default(cuid())
+  name            String
+  slug            String              @unique
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  users           User[]
+  equipments      Equipment[]
+  checklists      ChecklistTemplate[]
+  inspections     Inspection[]
+  nonConformities NonConformity[]
+  auditLogs       AuditLog[]
+  settings        TenantSettings?
 }
 
 model User {
@@ -68,6 +77,9 @@ model User {
   role             Role          @default(OPERATOR)
   passwordHash     String
   avatarUrl        String?
+  department       String?
+  position         String?
+  phone            String?
   active           Boolean       @default(true)
   failedLoginCount Int           @default(0)
   lockedUntil      DateTime?
@@ -79,9 +91,26 @@ model User {
   ownedEquipment   Equipment[]   @relation("EquipmentResponsible")
   ownedChecklists  ChecklistTemplate[] @relation("ChecklistResponsible")
   assignedInspections Inspection[] @relation("InspectionAssignee")
+  reportedNonConformities NonConformity[] @relation("NonConformityReporter")
+  assignedNonConformities NonConformity[] @relation("NonConformityAssignee")
 
   @@index([tenantId])
   @@index([role])
+}
+
+model TenantSettings {
+  id                       String   @id @default(cuid())
+  tenantId                 String   @unique
+  tenant                   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  companyName              String
+  checklistApprovalEnabled Boolean  @default(true)
+  inspectionGraceMinutes   Int      @default(30)
+  evidenceRequired         Boolean  @default(false)
+  notifyOverdue            Boolean  @default(true)
+  notifyCriticalFailures   Boolean  @default(true)
+  dataRetentionDays        Int      @default(1825)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 }
 
 model Session {
@@ -152,6 +181,7 @@ model Equipment {
   responsibleId        String?
   responsible          User?           @relation("EquipmentResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
   inspections          Inspection[]
+  nonConformities      NonConformity[]
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
@@ -180,6 +210,7 @@ model ChecklistTemplate {
   responsible       User?             @relation("ChecklistResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
   items             ChecklistItem[]
   inspections       Inspection[]
+  nonConformities   NonConformity[]
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -198,6 +229,7 @@ model ChecklistItem {
   criticality         Criticality       @default(MEDIUM)
   required            Boolean           @default(true)
   nonConformityAction String             @default("OPEN_OCCURRENCE")
+  answers             InspectionAnswer[]
 
   @@unique([templateId, position])
 }
@@ -217,6 +249,9 @@ model Inspection {
   startedAt   DateTime?
   completedAt DateTime?
   score       Decimal?          @db.Decimal(5, 2)
+  notes       String?
+  answers     InspectionAnswer[]
+  nonConformities NonConformity[]
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
@@ -225,3 +260,50 @@ model Inspection {
   @@index([assignedToId, status])
 }
 
+model InspectionAnswer {
+  id           String        @id @default(cuid())
+  inspectionId String
+  inspection   Inspection    @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  itemId       String
+  item         ChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  value        String
+  compliant    Boolean       @default(true)
+  note         String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([inspectionId, itemId])
+  @@index([inspectionId])
+}
+
+model NonConformity {
+  id           String              @id @default(cuid())
+  tenantId     String
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code         String
+  title        String
+  description  String
+  severity     Criticality         @default(MEDIUM)
+  status       NonConformityStatus @default(OPEN)
+  rootCause    String?
+  correctiveAction String?
+  dueAt        DateTime?
+  resolvedAt   DateTime?
+  reportedById String?
+  reportedBy   User?               @relation("NonConformityReporter", fields: [reportedById], references: [id], onDelete: SetNull)
+  assignedToId String?
+  assignedTo   User?               @relation("NonConformityAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  inspectionId String?
+  inspection   Inspection?         @relation(fields: [inspectionId], references: [id], onDelete: SetNull)
+  equipmentId  String?
+  equipment    Equipment?          @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  checklistId  String?
+  checklist    ChecklistTemplate?  @relation(fields: [checklistId], references: [id], onDelete: SetNull)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([tenantId, severity])
+  @@index([assignedToId, status])
+}

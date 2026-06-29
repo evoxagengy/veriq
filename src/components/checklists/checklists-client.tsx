@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   ClipboardCheck,
   Copy,
@@ -97,8 +98,11 @@ export function ChecklistsClient({ data }: { data: ChecklistsData }) {
                       <td className="px-4 py-4"><StatusBadge status={mapChecklistStatus(item.status)} /></td>
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-2 text-primary">
-                          {[Eye, Pencil, Copy, MoreVertical].map((Icon, index) => (
-                            <button key={index} className="veriq-focus grid h-9 w-9 place-items-center rounded-sm hover:bg-slate-100">
+                          <Link href={`/checklists/${item.id}`} className="veriq-focus grid h-9 w-9 place-items-center rounded-sm hover:bg-slate-100" aria-label="Visualizar checklist">
+                            <Eye className="h-4 w-4" aria-hidden="true" />
+                          </Link>
+                          {[Pencil, Copy, MoreVertical].map((Icon, index) => (
+                            <button key={index} className="veriq-focus grid h-9 w-9 place-items-center rounded-sm hover:bg-slate-100" type="button">
                               <Icon className="h-4 w-4" aria-hidden="true" />
                             </button>
                           ))}
@@ -235,4 +239,3 @@ function Field({
     </label>
   );
 }
-

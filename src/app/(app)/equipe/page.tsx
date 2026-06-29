@@ -1,17 +1,15 @@
-import { UsersRound } from "lucide-react";
-import { PlaceholderPage } from "@/components/layout/placeholder-page";
+import { TeamClient } from "@/components/team/team-client";
+import { requireSession } from "@/lib/auth/session";
+import { getTeamData } from "@/lib/data/queries";
 
 export const metadata = {
   title: "Equipe"
 };
 
-export default function TeamPage() {
-  return (
-    <PlaceholderPage
-      icon={UsersRound}
-      title="Equipe"
-      description="Gerencie usuários, perfis de acesso, permissões e responsabilidades."
-    />
-  );
+export default async function TeamPage() {
+  const session = await requireSession();
+  const data = await getTeamData(session.user.tenantId);
+
+  return <TeamClient data={data} />;
 }
 

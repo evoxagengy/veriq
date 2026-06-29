@@ -1,17 +1,15 @@
-import { ShieldAlert } from "lucide-react";
-import { PlaceholderPage } from "@/components/layout/placeholder-page";
+import { NonConformitiesClient } from "@/components/non-conformities/non-conformities-client";
+import { requireSession } from "@/lib/auth/session";
+import { getNonConformitiesData } from "@/lib/data/queries";
 
 export const metadata = {
   title: "Não conformidades"
 };
 
-export default function NonConformitiesPage() {
-  return (
-    <PlaceholderPage
-      icon={ShieldAlert}
-      title="Não conformidades"
-      description="Registre, trate e acompanhe desvios operacionais com rastreabilidade."
-    />
-  );
+export default async function NonConformitiesPage() {
+  const session = await requireSession();
+  const data = await getNonConformitiesData(session.user.tenantId);
+
+  return <NonConformitiesClient data={data} />;
 }
 

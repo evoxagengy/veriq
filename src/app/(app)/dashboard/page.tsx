@@ -7,6 +7,7 @@ import {
   Factory,
   ShieldCheck
 } from "lucide-react";
+import Link from "next/link";
 import { ConformityAreaChart, InspectionStatusDonut } from "@/components/charts/dashboard-charts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -101,7 +102,7 @@ export default async function DashboardPage() {
           <Card>
             <CardHeader>
               <h2 className="font-display text-base font-bold text-primary-dark">Atividades recentes</h2>
-              <a className="text-xs font-bold text-blue-600" href="/inspecoes">Ver todas</a>
+              <Link className="text-xs font-bold text-blue-600" href="/inspecoes">Ver todas</Link>
             </CardHeader>
             <CardContent className="space-y-4">
               {data.inspections.slice(0, 4).map((inspection) => (
@@ -171,17 +172,17 @@ export default async function DashboardPage() {
                 </div>
               ))}
             </div>
-            <a href="/inspecoes" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-blue-600">
+            <Link href="/inspecoes" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-blue-600">
               Ver todos os checklists pendentes
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </a>
+            </Link>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
             <h2 className="font-display text-base font-bold text-primary-dark">Equipamentos críticos</h2>
-            <a className="text-xs font-bold text-blue-600" href="/equipamentos">Ver todos</a>
+            <Link className="text-xs font-bold text-blue-600" href="/equipamentos">Ver todos</Link>
           </CardHeader>
           <CardContent>
             <div className="overflow-hidden rounded-md border border-border">

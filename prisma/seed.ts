@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 const PEPPER =
   process.env.SECURITY_PEPPER ??
   "dev-only-security_pepper-replace-before-production-32-characters";
+const SEED_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "Veriq@2026";
 
 async function hashPassword(password: string) {
   return argon2.hash(`${password}:${PEPPER}`, {
@@ -58,7 +59,30 @@ async function main() {
     create: { name: "Engenix Operações", slug: "engenix" }
   });
 
-  const passwordHash = await hashPassword("Veriq@2026");
+  await prisma.tenantSettings.upsert({
+    where: { tenantId: tenant.id },
+    update: {
+      companyName: "Engenix Operações",
+      checklistApprovalEnabled: true,
+      inspectionGraceMinutes: 30,
+      evidenceRequired: false,
+      notifyOverdue: true,
+      notifyCriticalFailures: true,
+      dataRetentionDays: 1825
+    },
+    create: {
+      tenantId: tenant.id,
+      companyName: "Engenix Operações",
+      checklistApprovalEnabled: true,
+      inspectionGraceMinutes: 30,
+      evidenceRequired: false,
+      notifyOverdue: true,
+      notifyCriticalFailures: true,
+      dataRetentionDays: 1825
+    }
+  });
+
+  const passwordHash = await hashPassword(SEED_PASSWORD);
   const savedUsers = await Promise.all(
     users.map((user) =>
       prisma.user.upsert({
@@ -67,14 +91,18 @@ async function main() {
           tenantId: tenant.id,
           name: user.name,
           role: user.role,
-          active: true
+          active: true,
+          department: user.role === "ADMIN" ? "Gestão" : "Operação",
+          position: user.role === "ADMIN" ? "Administrador do sistema" : "Equipe operacional"
         },
         create: {
           tenantId: tenant.id,
           name: user.name,
           email: user.email,
           role: user.role,
-          passwordHash
+          passwordHash,
+          department: user.role === "ADMIN" ? "Gestão" : "Operação",
+          position: user.role === "ADMIN" ? "Administrador do sistema" : "Equipe operacional"
         }
       })
     )
@@ -173,18 +201,91 @@ async function main() {
   });
 
   if (existingInspections < 12) {
-    await prisma.inspection.createMany({
-      data: checklists.slice(0, 8).map((checklist, index) => ({
-        tenantId: tenant.id,
-        templateId: checklist.id,
-        equipmentId: equipments[index % equipments.length]?.id,
-        assignedToId: operator.id,
-        status: (["OVERDUE", "PENDING", "PENDING", "IN_PROGRESS", "SCHEDULED", "COMPLETED"] as InspectionStatus[])[index % 6],
-        dueAt: new Date(Date.now() + (index - 2) * 60 * 60 * 1000),
-        startedAt: index % 3 === 0 ? new Date(Date.now() - 60 * 60 * 1000) : null,
-        completedAt: index % 6 === 5 ? new Date(Date.now() - 30 * 60 * 1000) : null,
-        score: index % 6 === 5 ? 98.6 : null
-      }))
+    for (const [index, checklist] of checklists.slice(0, 8).entries()) {
+      const status = (["OVERDUE", "PENDING", "PENDING", "IN_PROGRESS", "SCHEDULED", "COMPLETED"] as InspectionStatus[])[index % 6];
+      const inspection = await prisma.inspection.create({
+        data: {
+          tenantId: tenant.id,
+          templateId: checklist.id,
+          equipmentId: equipments[index % equipments.length]?.id,
+          assignedToId: operator.id,
+          status,
+          dueAt: new Date(Date.now() + (index - 2) * 60 * 60 * 1000),
+          startedAt: index % 3 === 0 ? new Date(Date.now() - 60 * 60 * 1000) : null,
+          completedAt: status === "COMPLETED" ? new Date(Date.now() - 30 * 60 * 1000) : null,
+          score: status === "COMPLETED" ? 98.6 : null,
+          notes: status === "COMPLETED" ? "Execução concluída sem bloqueios operacionais." : null
+        },
+        include: { template: { include: { items: true } } }
+      });
+
+      if (status === "COMPLETED") {
+        await prisma.inspectionAnswer.createMany({
+          data: inspection.template.items.map((item) => ({
+            inspectionId: inspection.id,
+            itemId: item.id,
+            value: "Conforme",
+            compliant: true,
+            note: "Verificado em campo."
+          })),
+          skipDuplicates: true
+        });
+      }
+    }
+  }
+
+  const existingNonConformities = await prisma.nonConformity.count({
+    where: { tenantId: tenant.id }
+  });
+
+  if (existingNonConformities < 4) {
+    await prisma.nonConformity.createMany({
+      data: [
+        {
+          tenantId: tenant.id,
+          code: "NC-0001",
+          title: "Vazamento identificado na caldeira",
+          description: "Pequeno vazamento observado durante inspeção de rotina.",
+          severity: "HIGH",
+          status: "OPEN",
+          dueAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+          reportedById: operator.id,
+          assignedToId: savedUsers[3]?.id ?? admin.id,
+          equipmentId: equipments[1]?.id,
+          checklistId: checklists[1]?.id
+        },
+        {
+          tenantId: tenant.id,
+          code: "NC-0002",
+          title: "Proteção danificada em ponte rolante",
+          description: "Proteção lateral requer substituição antes da próxima operação crítica.",
+          severity: "CRITICAL",
+          status: "IN_TREATMENT",
+          dueAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+          reportedById: savedUsers[4]?.id ?? operator.id,
+          assignedToId: savedUsers[5]?.id ?? admin.id,
+          equipmentId: equipments[3]?.id,
+          checklistId: checklists[4]?.id,
+          rootCause: "Desgaste mecânico",
+          correctiveAction: "Substituir proteção e validar fixação"
+        },
+        {
+          tenantId: tenant.id,
+          code: "NC-0003",
+          title: "Etiqueta de identificação ilegível",
+          description: "TAG do equipamento parcialmente ilegível.",
+          severity: "LOW",
+          status: "RESOLVED",
+          dueAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+          resolvedAt: new Date(Date.now() - 12 * 60 * 60 * 1000),
+          reportedById: operator.id,
+          assignedToId: operator.id,
+          equipmentId: equipments[2]?.id,
+          checklistId: checklists[2]?.id,
+          correctiveAction: "Etiqueta substituída"
+        }
+      ],
+      skipDuplicates: true
     });
   }
 
@@ -202,7 +303,6 @@ async function main() {
 
   console.log("Seed concluído.");
   console.log("Login demo: admin@veriq.local");
-  console.log("Senha demo: Veriq@2026");
 }
 
 main()
@@ -213,4 +313,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

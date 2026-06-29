@@ -2,9 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { hasAnyRole, requireSession } from "@/lib/auth/session";
+import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
-import { getRequestFingerprint } from "@/lib/security";
+import { optionalString } from "@/lib/forms";
+import { assertRole, supervisorRoles } from "@/lib/rbac";
+import { writeAuditLog } from "@/lib/audit";
 
 const createChecklistSchema = z.object({
   name: z.string().min(3).max(120),
@@ -18,9 +20,7 @@ const createChecklistSchema = z.object({
 export async function createChecklistAction(formData: FormData) {
   const session = await requireSession();
 
-  if (!hasAnyRole(session.user.role, ["ADMIN", "MANAGER", "SUPERVISOR"])) {
-    throw new Error("Acesso negado.");
-  }
+  assertRole(session.user.role, supervisorRoles);
 
   const parsed = createChecklistSchema.parse({
     name: formData.get("name"),
@@ -31,7 +31,6 @@ export async function createChecklistAction(formData: FormData) {
     estimatedMinutes: formData.get("estimatedMinutes")
   });
 
-  const { ipHash } = await getRequestFingerprint();
   const count = await prisma.checklistTemplate.count({
     where: { tenantId: session.user.tenantId }
   });
@@ -74,8 +73,7 @@ export async function createChecklistAction(formData: FormData) {
         userId: session.user.id,
         action: "CHECKLIST_CREATE",
         resource: "ChecklistTemplate",
-        resourceId: checklist.id,
-        ipHash
+        resourceId: checklist.id
       }
     });
   });
@@ -84,3 +82,81 @@ export async function createChecklistAction(formData: FormData) {
   revalidatePath("/dashboard");
 }
 
+export async function updateChecklistAction(formData: FormData) {
+  const session = await requireSession();
+  assertRole(session.user.role, supervisorRoles);
+
+  const id = z.string().min(1).parse(formData.get("id"));
+  const parsed = createChecklistSchema.extend({
+    status: z.enum(["ACTIVE", "DRAFT", "REVIEW", "ARCHIVED"]),
+    requiresApproval: z.boolean(),
+    allowsPhotos: z.boolean(),
+    requiresSignature: z.boolean(),
+    mobileEnabled: z.boolean()
+  }).parse({
+    name: formData.get("name"),
+    category: formData.get("category"),
+    area: formData.get("area"),
+    description: optionalString(formData.get("description")),
+    periodicity: formData.get("periodicity"),
+    estimatedMinutes: formData.get("estimatedMinutes"),
+    status: formData.get("status"),
+    requiresApproval: formData.get("requiresApproval") === "on",
+    allowsPhotos: formData.get("allowsPhotos") === "on",
+    requiresSignature: formData.get("requiresSignature") === "on",
+    mobileEnabled: formData.get("mobileEnabled") === "on"
+  });
+
+  const existing = await prisma.checklistTemplate.findFirst({
+    where: { id, tenantId: session.user.tenantId }
+  });
+
+  if (!existing) {
+    throw new Error("Checklist não encontrado.");
+  }
+
+  await prisma.checklistTemplate.update({
+    where: { id: existing.id },
+    data: parsed
+  });
+
+  await writeAuditLog({
+    tenantId: session.user.tenantId,
+    userId: session.user.id,
+    action: "CHECKLIST_UPDATE",
+    resource: "ChecklistTemplate",
+    resourceId: existing.id
+  });
+
+  revalidatePath("/checklists");
+  revalidatePath(`/checklists/${existing.id}`);
+}
+
+export async function archiveChecklistAction(formData: FormData) {
+  const session = await requireSession();
+  assertRole(session.user.role, supervisorRoles);
+  const id = z.string().min(1).parse(formData.get("id"));
+
+  const existing = await prisma.checklistTemplate.findFirst({
+    where: { id, tenantId: session.user.tenantId }
+  });
+
+  if (!existing) {
+    throw new Error("Checklist não encontrado.");
+  }
+
+  await prisma.checklistTemplate.update({
+    where: { id: existing.id },
+    data: { status: "ARCHIVED" }
+  });
+
+  await writeAuditLog({
+    tenantId: session.user.tenantId,
+    userId: session.user.id,
+    action: "CHECKLIST_ARCHIVE",
+    resource: "ChecklistTemplate",
+    resourceId: existing.id
+  });
+
+  revalidatePath("/checklists");
+}

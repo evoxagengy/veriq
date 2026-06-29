@@ -14,7 +14,8 @@ const statusMap = {
   inativo: ["neutral", "Inativo"],
   agendado: ["info", "Agendado"],
   concluido: ["success", "Concluído"],
-  disponivel: ["success", "Disponível agora"]
+  disponivel: ["success", "Disponível agora"],
+  cancelado: ["neutral", "Cancelado"]
 } as const;
 
 type StatusKey = keyof typeof statusMap;
@@ -24,4 +25,3 @@ export function StatusBadge({ status }: { status: StatusKey }) {
 
   return <Badge variant={variant}>{label}</Badge>;
 }
-

@@ -20,6 +20,21 @@ npm run prisma:seed
 ```
 
 O seed cria dados demo idempotentes e não apaga registros existentes.
+Defina `SEED_ADMIN_PASSWORD` para controlar a senha inicial do usuário demo.
+
+Módulos implementados:
+
+- Autenticação com sessão segura.
+- Dashboard operacional.
+- Checklists e detalhes.
+- Equipamentos e detalhes.
+- Inspeções com agendamento, início, execução e conclusão.
+- Abertura automática de não conformidades a partir de itens não conformes.
+- Gestão de não conformidades.
+- Equipe e perfis de acesso.
+- Relatórios executivos.
+- Perfil do usuário.
+- Configurações do tenant.
 
 ## Build
 
@@ -40,4 +55,3 @@ npm run build
 - RBAC em ações sensíveis de criação.
 - Headers de segurança configurados no Next.
 - `.env` e variações ignorados pelo Git.
-
