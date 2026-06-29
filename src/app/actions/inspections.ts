@@ -86,6 +86,14 @@ export async function startInspectionAction(formData: FormData) {
     throw new Error("Inspeção não encontrada.");
   }
 
+  if (inspection.status === "COMPLETED") {
+    redirect(`/inspecoes/${inspection.id}`);
+  }
+
+  if (!["PENDING", "SCHEDULED", "OVERDUE", "IN_PROGRESS"].includes(inspection.status)) {
+    throw new Error("Status inválido para iniciar checklist.");
+  }
+
   const canStart =
     inspection.assignedToId === session.user.id ||
     inspection.assignedToId === null ||
@@ -126,7 +134,7 @@ export async function completeInspectionAction(formData: FormData) {
       tenantId: session.user.tenantId
     },
     include: {
-      template: { include: { items: { orderBy: { position: "asc" } } } },
+      template: { include: { items: { where: { active: true }, orderBy: { position: "asc" } } } },
       equipment: true
     }
   });

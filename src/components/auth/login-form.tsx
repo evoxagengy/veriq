@@ -12,7 +12,7 @@ const initialState: LoginState = {
 
 function SubmitButton() {
   return (
-    <Button type="submit" className="mt-2 h-12 w-full">
+    <Button type="submit" className="h-11 w-full">
       Entrar
     </Button>
   );
@@ -23,7 +23,7 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form action={formAction} className="space-y-4">
       <div>
         <label htmlFor="email" className="mb-2 block text-sm font-semibold text-primary-dark">
           E-mail
@@ -37,7 +37,7 @@ export function LoginForm() {
           icon={<Mail className="h-5 w-5" />}
           required
           disabled={pending}
-          className="h-14"
+          className="h-12"
         />
       </div>
 
@@ -55,7 +55,7 @@ export function LoginForm() {
             icon={<Lock className="h-5 w-5" />}
             required
             disabled={pending}
-            className="h-14 pr-12"
+            className="h-12 pr-12"
           />
           <button
             type="button"
@@ -98,12 +98,12 @@ export function LoginForm() {
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      <Button type="button" variant="secondary" className="h-12 w-full" disabled={pending}>
+      <Button type="button" variant="secondary" className="h-11 w-full" disabled={pending}>
         <Headphones className="h-5 w-5" aria-hidden="true" />
         Falar com suporte
       </Button>
 
-      <p className="pt-5 text-center text-sm text-ink-muted">
+      <p className="pt-2 text-center text-sm text-ink-muted">
         Ainda não tem acesso?{" "}
         <a className="font-semibold text-accent-dark hover:text-accent" href="mailto:suporte@veriq.local">
           Solicitar acesso
@@ -117,4 +117,3 @@ export function LoginForm() {
     </form>
   );
 }
-

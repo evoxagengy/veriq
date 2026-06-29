@@ -3,7 +3,7 @@ import { requireSession } from "@/lib/auth/session";
 import { getInspectionsData } from "@/lib/data/queries";
 
 export const metadata = {
-  title: "Inspeções"
+  title: "Checklists operador"
 };
 
 export default async function InspecoesPage() {

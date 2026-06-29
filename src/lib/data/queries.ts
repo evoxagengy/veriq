@@ -20,6 +20,60 @@ export type ProfileData = Awaited<ReturnType<typeof getProfileData>>;
 export type ChecklistDetailData = Awaited<ReturnType<typeof getChecklistDetailData>>;
 export type EquipmentDetailData = Awaited<ReturnType<typeof getEquipmentDetailData>>;
 export type InspectionDetailData = Awaited<ReturnType<typeof getInspectionDetailData>>;
+export type ShellNotificationsData = Awaited<ReturnType<typeof getShellNotifications>>;
+
+const privilegedRoles: Role[] = ["MASTER", "ADMIN", "MANAGER", "SUPERVISOR"];
+
+export async function getShellNotifications(tenantId: string, userId: string, role: Role) {
+  const where =
+    privilegedRoles.includes(role)
+      ? { tenantId }
+      : { tenantId, OR: [{ assignedToId: userId }, { assignedToId: null }] };
+
+  const [overdue, criticalEquipments, pendingApprovals, recentFailures] = await prisma.$transaction([
+    prisma.inspection.count({ where: { ...where, status: "OVERDUE" } }),
+    prisma.equipment.count({
+      where: { tenantId, active: true, OR: [{ status: "CRITICAL" }, { criticality: "CRITICAL" }] }
+    }),
+    prisma.checklistTemplate.count({ where: { tenantId, status: "REVIEW" } }),
+    prisma.nonConformity.count({ where: { tenantId, status: { in: ["OPEN", "IN_TREATMENT"] }, severity: { in: ["HIGH", "CRITICAL"] } } })
+  ]);
+
+  return [
+    {
+      id: "overdue",
+      title: `${overdue} checklist${overdue === 1 ? "" : "s"} atrasado${overdue === 1 ? "" : "s"}`,
+      description: "Execuções fora do prazo operacional.",
+      href: "/inspecoes",
+      tone: "danger" as const,
+      count: overdue
+    },
+    {
+      id: "critical-equipment",
+      title: `${criticalEquipments} equipamento${criticalEquipments === 1 ? "" : "s"} crítico${criticalEquipments === 1 ? "" : "s"}`,
+      description: "Ativos exigindo atenção da liderança.",
+      href: "/equipamentos",
+      tone: "warning" as const,
+      count: criticalEquipments
+    },
+    {
+      id: "review",
+      title: `${pendingApprovals} modelo${pendingApprovals === 1 ? "" : "s"} em revisão`,
+      description: "Checklists aguardando validação.",
+      href: "/checklists",
+      tone: "info" as const,
+      count: pendingApprovals
+    },
+    {
+      id: "failures",
+      title: `${recentFailures} ocorrência${recentFailures === 1 ? "" : "s"} crítica${recentFailures === 1 ? "" : "s"}`,
+      description: "Não conformidades abertas ou em tratamento.",
+      href: "/dashboard",
+      tone: "danger" as const,
+      count: recentFailures
+    }
+  ].filter((item) => item.count > 0);
+}
 
 export async function getDashboardData(tenantId: string) {
   const [
@@ -86,24 +140,41 @@ export async function getDashboardData(tenantId: string) {
 }
 
 export async function getChecklistsData(tenantId: string) {
-  const [items, total, active, drafts, review] = await prisma.$transaction([
+  const [items, total, active, drafts, review, blocks, equipments, users] = await prisma.$transaction([
     prisma.checklistTemplate.findMany({
       where: { tenantId, status: { not: "ARCHIVED" } },
       include: {
+        block: true,
+        equipment: true,
         responsible: true,
-        items: true,
+        items: { where: { active: true }, orderBy: { position: "asc" } },
         inspections: {
           orderBy: { dueAt: "desc" },
           take: 1
         }
       },
-      orderBy: { name: "asc" },
-      take: 50
+      orderBy: [{ block: { name: "asc" } }, { name: "asc" }],
+      take: 80
     }),
     prisma.checklistTemplate.count({ where: { tenantId, status: { not: "ARCHIVED" } } }),
     prisma.checklistTemplate.count({ where: { tenantId, status: "ACTIVE" } }),
     prisma.checklistTemplate.count({ where: { tenantId, status: "DRAFT" } }),
-    prisma.checklistTemplate.count({ where: { tenantId, status: "REVIEW" } })
+    prisma.checklistTemplate.count({ where: { tenantId, status: "REVIEW" } }),
+    prisma.checklistBlock.findMany({
+      where: { tenantId, active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, description: true }
+    }),
+    prisma.equipment.findMany({
+      where: { tenantId, active: true, allowChecklists: true },
+      orderBy: [{ area: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, tag: true, area: true, category: true }
+    }),
+    prisma.user.findMany({
+      where: { tenantId, active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, role: true }
+    })
   ]);
 
   return {
@@ -113,19 +184,47 @@ export async function getChecklistsData(tenantId: string) {
       drafts,
       review
     },
+    blocks,
+    equipments,
+    users,
     items: items.map((item) => ({
       id: item.id,
       code: item.code,
       name: item.name,
       category: item.category,
       area: item.area,
+      description: item.description,
+      blockId: item.blockId,
+      blockName: item.block?.name ?? "Sem bloco",
+      equipmentId: item.equipmentId,
+      equipmentName: item.equipment ? `${item.equipment.name} (${item.equipment.tag})` : item.area,
+      responsibleId: item.responsibleId,
       responsible: item.responsible?.name ?? "Sem responsável",
       periodicity: item.periodicity,
       estimatedMinutes: item.estimatedMinutes,
       status: item.status,
+      requiresApproval: item.requiresApproval,
+      allowsPhotos: item.allowsPhotos,
+      requiresSignature: item.requiresSignature,
+      mobileEnabled: item.mobileEnabled,
       itemCount: item.items.length,
+      items: item.items.map((checkItem) => ({
+        id: checkItem.id,
+        position: checkItem.position,
+        description: checkItem.description,
+        responseType: checkItem.responseType,
+        criticality: checkItem.criticality,
+        required: checkItem.required,
+        actionOnFailure: checkItem.nonConformityAction
+      })),
       lastExecution: item.inspections[0]?.completedAt ?? item.updatedAt,
-      nextExecution: item.inspections[0]?.dueAt ?? item.updatedAt
+      nextExecution: item.inspections[0]?.dueAt ?? item.updatedAt,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    })),
+    blockSummary: blocks.map((block) => ({
+      ...block,
+      total: items.filter((item) => item.blockId === block.id).length
     })),
     mostUsed: items.slice(0, 5).map((item, index) => ({
       name: item.name,
@@ -135,17 +234,22 @@ export async function getChecklistsData(tenantId: string) {
 }
 
 export async function getEquipmentData(tenantId: string) {
-  const [items, total, operating, maintenance, critical] = await prisma.$transaction([
+  const [items, total, operating, maintenance, critical, users] = await prisma.$transaction([
     prisma.equipment.findMany({
       where: { tenantId },
-      include: { responsible: true, nonConformities: true },
+      include: { responsible: true, nonConformities: true, checklists: true },
       orderBy: [{ active: "desc" }, { status: "asc" }, { name: "asc" }],
-      take: 50
+      take: 80
     }),
     prisma.equipment.count({ where: { tenantId } }),
     prisma.equipment.count({ where: { tenantId, status: "OPERATING", active: true } }),
     prisma.equipment.count({ where: { tenantId, status: "MAINTENANCE", active: true } }),
-    prisma.equipment.count({ where: { tenantId, status: "CRITICAL", active: true } })
+    prisma.equipment.count({ where: { tenantId, status: "CRITICAL", active: true } }),
+    prisma.user.findMany({
+      where: { tenantId, active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, role: true }
+    })
   ]);
 
   return {
@@ -155,31 +259,51 @@ export async function getEquipmentData(tenantId: string) {
       maintenance,
       critical
     },
+    users,
     items: items.map((item) => ({
       id: item.id,
       tag: item.tag,
       name: item.name,
       model: item.model,
+      manufacturer: item.manufacturer,
+      serialNumber: item.serialNumber,
       category: item.category,
       area: item.area,
+      location: item.location,
+      description: item.description,
+      responsibleId: item.responsibleId,
       responsible: item.responsible?.name ?? "Sem responsável",
       lastChecklistAt: item.lastChecklistAt,
       nextInspectionAt: item.nextInspectionAt,
       status: item.status,
       criticality: item.criticality,
       active: item.active,
-      openNonConformities: item.nonConformities.filter((nc) => nc.status !== "RESOLVED").length
+      monitorOnDashboard: item.monitorOnDashboard,
+      allowChecklists: item.allowChecklists,
+      requiresStopApproval: item.requiresStopApproval,
+      checklistCount: item.checklists.length,
+      openNonConformities: item.nonConformities.filter((nc) => nc.status !== "RESOLVED").length,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
     })),
     categories: groupBy(items.map((item) => item.category)),
     criticalItems: items
       .filter((item) => item.status === "CRITICAL" || item.criticality === "CRITICAL")
       .slice(0, 4)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        tag: item.tag,
+        area: item.area,
+        status: item.status,
+        criticality: item.criticality
+      }))
   };
 }
 
 export async function getInspectionsData(tenantId: string, userId: string, role: Role) {
   const where =
-    role === "ADMIN" || role === "MANAGER" || role === "SUPERVISOR"
+    privilegedRoles.includes(role)
       ? { tenantId }
       : { tenantId, OR: [{ assignedToId: userId }, { assignedToId: null }] };
 
@@ -188,12 +312,17 @@ export async function getInspectionsData(tenantId: string, userId: string, role:
       prisma.inspection.findMany({
         where,
         include: {
-          template: true,
+          template: {
+            include: {
+              block: true,
+              items: { where: { active: true }, orderBy: { position: "asc" } }
+            }
+          },
           equipment: true,
           assignedTo: true
         },
         orderBy: { dueAt: "asc" },
-        take: 50
+        take: 80
       }),
       prisma.inspection.count({ where: { tenantId, status: { in: ["PENDING", "SCHEDULED"] } } }),
       prisma.inspection.count({ where: { tenantId, status: "IN_PROGRESS" } }),
@@ -230,6 +359,7 @@ export async function getInspectionsData(tenantId: string, userId: string, role:
       id: item.id,
       checklist: item.template.name,
       code: item.template.code,
+      blockName: item.template.block?.name ?? "Sem bloco",
       equipment: item.equipment?.name ?? "Área geral",
       tag: item.equipment?.tag ?? item.template.area,
       category: item.template.category,
@@ -237,7 +367,16 @@ export async function getInspectionsData(tenantId: string, userId: string, role:
       dueAt: item.dueAt,
       estimatedMinutes: item.template.estimatedMinutes,
       status: item.status,
-      assignedTo: item.assignedTo?.name ?? "Livre"
+      assignedTo: item.assignedTo?.name ?? "Livre",
+      itemCount: item.template.items.length,
+      items: item.template.items.map((checkItem) => ({
+        id: checkItem.id,
+        position: checkItem.position,
+        description: checkItem.description,
+        responseType: checkItem.responseType,
+        criticality: checkItem.criticality,
+        required: checkItem.required
+      }))
     }))
   };
 }
@@ -293,13 +432,16 @@ export async function getNonConformitiesData(tenantId: string) {
   };
 }
 
-export async function getTeamData(tenantId: string) {
-  const [users, auditLogs] = await prisma.$transaction([
+export async function getTeamData(tenantId: string, role?: Role) {
+  const master = role === "MASTER";
+  const [users, auditLogs, tenants] = await prisma.$transaction([
     prisma.user.findMany({
-      where: { tenantId },
+      where: master ? {} : { tenantId },
       orderBy: [{ active: "desc" }, { name: "asc" }],
       select: {
         id: true,
+        tenantId: true,
+        tenant: { select: { name: true, slug: true } },
         name: true,
         email: true,
         role: true,
@@ -312,10 +454,14 @@ export async function getTeamData(tenantId: string) {
       }
     }),
     prisma.auditLog.findMany({
-      where: { tenantId },
-      include: { user: true },
+      where: master ? {} : { tenantId },
+      include: { user: true, tenant: true },
       orderBy: { createdAt: "desc" },
       take: 10
+    }),
+    prisma.tenant.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, slug: true, active: true, createdAt: true }
     })
   ]);
 
@@ -323,15 +469,24 @@ export async function getTeamData(tenantId: string) {
     totals: {
       users: users.length,
       active: users.filter((user) => user.active).length,
-      admins: users.filter((user) => user.role === "ADMIN" || user.role === "MANAGER").length,
-      operators: users.filter((user) => user.role === "OPERATOR" || user.role === "TECHNICIAN" || user.role === "INSPECTOR").length
+      admins: users.filter((user) => user.role === "MASTER" || user.role === "ADMIN" || user.role === "MANAGER").length,
+      operators: users.filter((user) => user.role === "OPERATOR" || user.role === "TECHNICIAN" || user.role === "INSPECTOR").length,
+      tenants: tenants.length
     },
-    users,
+    canManageTenants: master,
+    currentTenantId: tenantId,
+    tenants,
+    users: users.map((user) => ({
+      ...user,
+      tenantName: user.tenant.name,
+      tenantSlug: user.tenant.slug
+    })),
     auditLogs: auditLogs.map((log) => ({
       id: log.id,
       action: log.action,
       resource: log.resource,
       user: log.user?.name ?? "Sistema",
+      tenant: log.tenant?.name ?? "Sem empresa",
       createdAt: log.createdAt
     }))
   };
@@ -466,8 +621,10 @@ export async function getChecklistDetailData(tenantId: string, id: string) {
   return prisma.checklistTemplate.findFirst({
     where: { tenantId, id },
     include: {
+      block: true,
+      equipment: true,
       responsible: true,
-      items: { orderBy: { position: "asc" } },
+      items: { where: { active: true }, orderBy: { position: "asc" } },
       inspections: {
         include: { equipment: true, assignedTo: true },
         orderBy: { dueAt: "desc" },
@@ -486,6 +643,10 @@ export async function getEquipmentDetailData(tenantId: string, id: string) {
     where: { tenantId, id },
     include: {
       responsible: true,
+      checklists: {
+        include: { block: true },
+        orderBy: { name: "asc" }
+      },
       inspections: {
         include: { template: true, assignedTo: true },
         orderBy: { dueAt: "desc" },
@@ -506,7 +667,8 @@ export async function getInspectionDetailData(tenantId: string, id: string) {
     include: {
       template: {
         include: {
-          items: { orderBy: { position: "asc" } }
+          block: true,
+          items: { where: { active: true }, orderBy: { position: "asc" } }
         }
       },
       equipment: true,
@@ -634,6 +796,7 @@ export function mapCriticalityBadge(criticality: Criticality) {
 
 export function mapRoleLabel(role: Role) {
   const map: Record<Role, string> = {
+    MASTER: "Master",
     ADMIN: "Administrador",
     MANAGER: "Gestor",
     SUPERVISOR: "Supervisor",

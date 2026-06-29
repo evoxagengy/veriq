@@ -7,9 +7,7 @@ const protectedRoutes = [
   "/checklists",
   "/equipamentos",
   "/inspecoes",
-  "/nao-conformidades",
-  "/relatorios",
-  "/equipe",
+  "/usuarios",
   "/configuracoes",
   "/perfil"
 ];
@@ -39,4 +37,3 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: ["/((?!api|_next/static|_next/image|favicon.svg|brand).*)"]
 };
-

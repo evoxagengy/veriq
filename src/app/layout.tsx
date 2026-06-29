@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   },
   description: "SaaS de checklists operacionais e inspeções de equipamentos.",
   icons: {
-    icon: "/favicon.svg"
+    icon: "/brand/favicon.png"
   }
 };
 
@@ -36,4 +36,3 @@ export default function RootLayout({
     </html>
   );
 }
-

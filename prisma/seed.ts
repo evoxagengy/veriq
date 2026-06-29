@@ -18,13 +18,20 @@ async function hashPassword(password: string) {
 }
 
 const users = [
-  { name: "Rafael Souza", email: "admin@veriq.local", role: "ADMIN" as Role },
+  { name: "Rafael Souza", email: "admin@veriq.local", role: "MASTER" as Role },
   { name: "Ana Paula", email: "ana@veriq.local", role: "SUPERVISOR" as Role },
   { name: "João Silva", email: "joao@veriq.local", role: "OPERATOR" as Role },
   { name: "Carlos Lima", email: "carlos@veriq.local", role: "TECHNICIAN" as Role },
   { name: "Mariana Costa", email: "mariana@veriq.local", role: "INSPECTOR" as Role },
   { name: "Fernanda Silva", email: "fernanda@veriq.local", role: "MANAGER" as Role }
 ];
+
+const blockSeed = [
+  ["tratamento-caldo", "Tratamento de caldo", "Rotinas de equipamentos e pontos críticos do tratamento."],
+  ["utilidades", "Utilidades", "Caldeiras, bombas, compressores e infraestrutura operacional."],
+  ["movimentacao", "Movimentação interna", "Empilhadeiras, ponte rolante e movimentação de carga."],
+  ["seguranca-operacional", "Segurança operacional", "EPI, extintores e rotinas de segurança."]
+] satisfies Array<[string, string, string]>;
 
 const equipmentSeed = [
   ["EMP-02", "Empilhadeira Hyster H2.5", "Empilhadeiras", "Logística", "H2.5FT", "CRITICAL", "CRITICAL"],
@@ -40,23 +47,50 @@ const equipmentSeed = [
 ] satisfies Array<[string, string, string, string, string, EquipmentStatus, Criticality]>;
 
 const checklistSeed = [
-  ["CHK-001", "Inspeção diária de empilhadeira", "Empilhadeiras", "EMP-02 / Logística", "Diária", "ACTIVE"],
-  ["CHK-002", "Checklist de caldeira", "Caldeiras", "CB-101 / Utilidades", "Diária", "ACTIVE"],
-  ["CHK-003", "Inspeção de compressor", "Compressores", "CP-03 / Manutenção", "Diária", "ACTIVE"],
-  ["CHK-004", "Segurança operacional", "Segurança", "Geral", "Semanal", "ACTIVE"],
-  ["CHK-005", "Ponte rolante", "Pontes Rolantes", "PR-05 / Produção", "Semanal", "ACTIVE"],
-  ["CHK-006", "Checklist elétrica NR-10", "Elétrica", "Painéis Elétricos", "Quinzenal", "ACTIVE"],
-  ["CHK-007", "Inspeção de extintores", "Segurança", "Geral", "Mensal", "REVIEW"],
-  ["CHK-008", "Controle de EPI", "Segurança", "Geral", "Mensal", "ACTIVE"],
-  ["CHK-009", "Lubrificação de máquinas", "Manutenção", "Geral", "Mensal", "ACTIVE"],
-  ["CHK-010", "Limpeza industrial", "Limpeza", "Geral", "Diária", "DRAFT"]
-] satisfies Array<[string, string, string, string, string, ChecklistStatus]>;
+  ["CHK-001", "Inspeção diária de empilhadeira", "Empilhadeiras", "EMP-02", "Diária", "ACTIVE", "Movimentação interna"],
+  ["CHK-002", "Checklist de caldeira", "Caldeiras", "CB-101", "Diária", "ACTIVE", "Utilidades"],
+  ["CHK-003", "Inspeção de compressor", "Compressores", "CP-03", "Diária", "ACTIVE", "Utilidades"],
+  ["CHK-004", "Segurança operacional", "Segurança", "", "Semanal", "ACTIVE", "Segurança operacional"],
+  ["CHK-005", "Ponte rolante", "Pontes Rolantes", "PR-05", "Semanal", "ACTIVE", "Movimentação interna"],
+  ["CHK-006", "Checklist elétrica NR-10", "Elétrica", "PE-12", "Quinzenal", "ACTIVE", "Segurança operacional"],
+  ["CHK-007", "Inspeção de extintores", "Segurança", "", "Mensal", "REVIEW", "Segurança operacional"],
+  ["CHK-008", "Controle de EPI", "Segurança", "", "Mensal", "ACTIVE", "Segurança operacional"],
+  ["CHK-009", "Lubrificação de máquinas", "Manutenção", "BC-07", "Mensal", "ACTIVE", "Tratamento de caldo"],
+  ["CHK-010", "Limpeza industrial", "Limpeza", "", "Diária", "DRAFT", "Tratamento de caldo"]
+] satisfies Array<[string, string, string, string, string, ChecklistStatus, string]>;
+
+const defaultItems = [
+  {
+    position: 1,
+    description: "Verificar condição geral do equipamento",
+    responseType: "Sim/Não",
+    criticality: "MEDIUM" as Criticality,
+    required: true,
+    nonConformityAction: "OPEN_OCCURRENCE"
+  },
+  {
+    position: 2,
+    description: "Registrar evidência fotográfica quando aplicável",
+    responseType: "Foto",
+    criticality: "LOW" as Criticality,
+    required: false,
+    nonConformityAction: "REQUIRE_PHOTO"
+  },
+  {
+    position: 3,
+    description: "Informar observações relevantes da execução",
+    responseType: "Texto",
+    criticality: "LOW" as Criticality,
+    required: false,
+    nonConformityAction: "REQUEST_APPROVAL"
+  }
+];
 
 async function main() {
   const tenant = await prisma.tenant.upsert({
     where: { slug: "engenix" },
-    update: { name: "Engenix Operações" },
-    create: { name: "Engenix Operações", slug: "engenix" }
+    update: { name: "Engenix Operações", active: true },
+    create: { name: "Engenix Operações", slug: "engenix", active: true }
   });
 
   await prisma.tenantSettings.upsert({
@@ -92,8 +126,8 @@ async function main() {
           name: user.name,
           role: user.role,
           active: true,
-          department: user.role === "ADMIN" ? "Gestão" : "Operação",
-          position: user.role === "ADMIN" ? "Administrador do sistema" : "Equipe operacional"
+          department: user.role === "MASTER" ? "Gestão" : "Operação",
+          position: user.role === "MASTER" ? "Administrador master" : "Equipe operacional"
         },
         create: {
           tenantId: tenant.id,
@@ -101,8 +135,8 @@ async function main() {
           email: user.email,
           role: user.role,
           passwordHash,
-          department: user.role === "ADMIN" ? "Gestão" : "Operação",
-          position: user.role === "ADMIN" ? "Administrador do sistema" : "Equipe operacional"
+          department: user.role === "MASTER" ? "Gestão" : "Operação",
+          position: user.role === "MASTER" ? "Administrador master" : "Equipe operacional"
         }
       })
     )
@@ -110,6 +144,17 @@ async function main() {
 
   const admin = savedUsers[0];
   const operator = savedUsers.find((user) => user.role === "OPERATOR") ?? admin;
+
+  const blocks = await Promise.all(
+    blockSeed.map(([slug, name, description]) =>
+      prisma.checklistBlock.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name } },
+        update: { description, active: true },
+        create: { tenantId: tenant.id, name, description }
+      }).then((block) => [slug, block] as const)
+    )
+  );
+  const blockByName = new Map(blocks.map(([, block]) => [block.name, block]));
 
   const equipments = await Promise.all(
     equipmentSeed.map(([tag, name, category, area, model, status, criticality], index) =>
@@ -122,6 +167,9 @@ async function main() {
           model,
           status,
           criticality,
+          active: true,
+          allowChecklists: true,
+          monitorOnDashboard: true,
           responsibleId: savedUsers[index % savedUsers.length]?.id ?? admin.id,
           lastChecklistAt: new Date("2025-05-16T08:00:00-03:00"),
           nextInspectionAt: new Date(Date.now() + (index + 1) * 24 * 60 * 60 * 1000)
@@ -143,57 +191,56 @@ async function main() {
       })
     )
   );
+  const equipmentByTag = new Map(equipments.map((equipment) => [equipment.tag, equipment]));
 
   const checklists = await Promise.all(
-    checklistSeed.map(([code, name, category, area, periodicity, status], index) =>
-      prisma.checklistTemplate.upsert({
+    checklistSeed.map(async ([code, name, category, equipmentTag, periodicity, status, blockName], index) => {
+      const equipment = equipmentTag ? equipmentByTag.get(equipmentTag) : null;
+      const block = blockByName.get(blockName);
+      const checklist = await prisma.checklistTemplate.upsert({
         where: { tenantId_code: { tenantId: tenant.id, code } },
         update: {
           name,
           category,
-          area,
+          area: equipment ? `${equipment.tag} / ${equipment.area}` : blockName,
           periodicity,
           status,
+          blockId: block?.id,
+          equipmentId: equipment?.id,
           responsibleId: savedUsers[index % savedUsers.length]?.id ?? admin.id,
-          estimatedMinutes: 15 + (index % 5) * 5
+          estimatedMinutes: 15 + (index % 5) * 5,
+          mobileEnabled: true,
+          allowsPhotos: true
         },
         create: {
           tenantId: tenant.id,
           code,
           name,
           category,
-          area,
+          area: equipment ? `${equipment.tag} / ${equipment.area}` : blockName,
           periodicity,
           status,
+          blockId: block?.id,
+          equipmentId: equipment?.id,
           responsibleId: savedUsers[index % savedUsers.length]?.id ?? admin.id,
           estimatedMinutes: 15 + (index % 5) * 5,
-          items: {
-            create: [
-              {
-                position: 1,
-                description: "Verificar condição geral",
-                responseType: "Sim/Não",
-                criticality: "MEDIUM"
-              },
-              {
-                position: 2,
-                description: "Registrar evidência fotográfica",
-                responseType: "Foto",
-                criticality: "LOW",
-                required: false
-              },
-              {
-                position: 3,
-                description: "Informar observações relevantes",
-                responseType: "Texto",
-                criticality: "LOW",
-                required: false
-              }
-            ]
-          }
+          mobileEnabled: true,
+          allowsPhotos: true
         }
-      })
-    )
+      });
+
+      await Promise.all(
+        defaultItems.map((item) =>
+          prisma.checklistItem.upsert({
+            where: { templateId_position: { templateId: checklist.id, position: item.position } },
+            update: { ...item, active: true },
+            create: { ...item, active: true, templateId: checklist.id }
+          })
+        )
+      );
+
+      return checklist;
+    })
   );
 
   const existingInspections = await prisma.inspection.count({
@@ -216,7 +263,7 @@ async function main() {
           score: status === "COMPLETED" ? 98.6 : null,
           notes: status === "COMPLETED" ? "Execução concluída sem bloqueios operacionais." : null
         },
-        include: { template: { include: { items: true } } }
+        include: { template: { include: { items: { where: { active: true } } } } }
       });
 
       if (status === "COMPLETED") {

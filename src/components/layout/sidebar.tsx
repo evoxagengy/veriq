@@ -6,11 +6,9 @@ import {
   BarChart3,
   CalendarCheck2,
   ClipboardCheck,
-  FileText,
   PanelLeftClose,
   Settings,
   ShieldCheck,
-  ShieldAlert,
   UsersRound,
   Wrench
 } from "lucide-react";
@@ -22,10 +20,8 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/checklists", label: "Checklists", icon: ClipboardCheck },
   { href: "/equipamentos", label: "Equipamentos", icon: Wrench },
-  { href: "/inspecoes", label: "Inspeções", icon: CalendarCheck2 },
-  { href: "/nao-conformidades", label: "Não conformidades", icon: ShieldAlert },
-  { href: "/relatorios", label: "Relatórios", icon: FileText },
-  { href: "/equipe", label: "Equipe", icon: UsersRound },
+  { href: "/inspecoes", label: "Checklists operador", icon: CalendarCheck2 },
+  { href: "/usuarios", label: "Usuários", icon: UsersRound },
   { href: "/configuracoes", label: "Configurações", icon: Settings }
 ];
 
@@ -72,4 +68,3 @@ export function Sidebar() {
     </aside>
   );
 }
-

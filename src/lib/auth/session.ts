@@ -60,7 +60,8 @@ export async function getCurrentSession() {
     !session ||
     session.revokedAt ||
     session.expiresAt <= new Date() ||
-    !session.user.active
+    !session.user.active ||
+    !session.user.tenant.active
   ) {
     return null;
   }

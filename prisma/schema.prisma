@@ -8,6 +8,7 @@ datasource db {
 }
 
 enum Role {
+  MASTER
   ADMIN
   MANAGER
   SUPERVISOR
@@ -57,6 +58,7 @@ model Tenant {
   id              String              @id @default(cuid())
   name            String
   slug            String              @unique
+  active          Boolean             @default(true)
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   users           User[]
@@ -66,6 +68,7 @@ model Tenant {
   nonConformities NonConformity[]
   auditLogs       AuditLog[]
   settings        TenantSettings?
+  checklistBlocks ChecklistBlock[]
 }
 
 model User {
@@ -182,6 +185,7 @@ model Equipment {
   responsible          User?           @relation("EquipmentResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
   inspections          Inspection[]
   nonConformities      NonConformity[]
+  checklists           ChecklistTemplate[]
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
@@ -201,6 +205,10 @@ model ChecklistTemplate {
   periodicity       String
   description       String?
   status            ChecklistStatus   @default(ACTIVE)
+  blockId           String?
+  block             ChecklistBlock?   @relation(fields: [blockId], references: [id], onDelete: SetNull)
+  equipmentId       String?
+  equipment         Equipment?         @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
   estimatedMinutes  Int               @default(30)
   requiresApproval  Boolean           @default(false)
   allowsPhotos      Boolean           @default(true)
@@ -217,6 +225,23 @@ model ChecklistTemplate {
   @@unique([tenantId, code])
   @@index([tenantId, status])
   @@index([tenantId, category])
+  @@index([tenantId, blockId])
+  @@index([tenantId, equipmentId])
+}
+
+model ChecklistBlock {
+  id          String              @id @default(cuid())
+  tenantId    String
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  active      Boolean             @default(true)
+  checklists  ChecklistTemplate[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId, active])
 }
 
 model ChecklistItem {
@@ -228,10 +253,12 @@ model ChecklistItem {
   responseType        String
   criticality         Criticality       @default(MEDIUM)
   required            Boolean           @default(true)
+  active              Boolean           @default(true)
   nonConformityAction String             @default("OPEN_OCCURRENCE")
   answers             InspectionAnswer[]
 
   @@unique([templateId, position])
+  @@index([templateId, active])
 }
 
 model Inspection {
